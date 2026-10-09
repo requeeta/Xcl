@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>[Terminal.] v8 LITE</title>
+<style>
+:root{
+  --bg-primary:#000;--bg-panel:#0a0a0a;--bg-header:#111;--bg-hover:#1a1a1a;
+  --border:#2a2a2a;--border-accent:#ff8c00;--text-primary:#e0e0e0;
+  --text-dim:#787878;--text-amber:#ffb000;--text-cyan:#00d4ff;
+  --green:#00c853;--red:#ff1744;
+  --font-mono:'IBM Plex Mono','Consolas','Monaco','Courier New',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:var(--bg-primary);color:var(--text-primary);
+  font-family:var(--font-mono);font-size:12px;line-height:1.4;overflow-x:hidden}
+.boot-screen{position:fixed;inset:0;background:#000;z-index:9999;
+  display:flex;align-items:center;justify-content:center;transition:opacity .6s}
+.boot-screen.hidden{opacity:0;pointer-events:none}
+.boot-text{color:var(--text-amber);font-size:13px;white-space:pre-wrap;line-height:1.6}
+.terminal-header{display:flex;justify-content:space-between;align-items:center;
+  background:var(--bg-header);border-bottom:2px solid var(--border-accent);
+  padding:6px 12px;position:sticky;top:0;z-index:100;flex-wrap:wrap;gap:6px}
+.ascii-logo{color:var(--text-amber);font-weight:bold;font-size:14px;letter-spacing:1px}
+.header-center{display:flex;gap:16px}
+.clock{color:var(--text-cyan);font-size:11px}
+.header-right{display:flex;align-items:center;gap:8px}
+.status-dot{font-size:14px;animation:pulse 1.5s infinite;color:var(--text-dim)}
+.status-dot.live{color:var(--green)}
+.status-dot.offline{color:var(--red)}
+.status-text{color:var(--text-dim);font-size:10px;text-transform:uppercase}
+.last-update{color:var(--text-dim);font-size:10px;margin-left:8px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.ticker-tape{background:#0d0d0d;border-bottom:1px solid var(--border);
+  overflow:hidden;white-space:nowrap;padding:4px 0}
+.ticker-tape-inner{display:inline-block;animation:scroll-left 60s linear infinite;padding-left:100%}
+.ticker-item{display:inline-block;margin-right:24px;font-size:11px}
+.ticker-item .sym{color:var(--text-amber);font-weight:bold}
+.ticker-item .px{color:var(--text-primary);margin-left:6px}
+.ticker-item .chg.up{color:var(--green);margin-left:4px}
+.ticker-item .chg.down{color:var(--red);margin-left:4px}
+@keyframes scroll-left{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.terminal-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;
+  background:var(--border);padding:1px;min-height:calc(100vh - 120px)}
+.panel{background:var(--bg-panel);display:flex;flex-direction:column;overflow:hidden}
+.panel-full{grid-column:span 2}
+.panel-half{grid-column:span 1}
+.panel-header{display:flex;justify-content:space-between;align-items:center;
+  padding:4px 10px;background:var(--bg-header);border-bottom:1px solid var(--border-accent)}
+.panel-title{color:var(--text-amber);font-weight:bold;font-size:11px;letter-spacing:.5px}
+.freshness{font-size:9px;padding:1px 5px;border-radius:2px;margin-right:6px}
+.freshness.live{background:rgba(0,200,83,.15);color:var(--green);border:1px solid var(--green)}
+.freshness.delayed{background:rgba(255,176,0,.15);color:var(--text-amber);border:1px solid var(--text-amber)}
+.freshness.dead{background:rgba(255,23,68,.15);color:var(--red);border:1px solid var(--red)}
+.panel-body{flex:1;padding:8px 10px;overflow:auto}
+.market-table{width:100%;border-collapse:collapse;font-size:11px}
+.market-table thead th{text-align:right;color:var(--text-dim);font-size:9px;
+  text-transform:uppercase;padding:4px 6px;border-bottom:1px solid var(--border);
+  position:sticky;top:0;background:var(--bg-panel);letter-spacing:.5px}
+.market-table thead th:first-child{text-align:left}
+.market-table tbody td{text-align:right;padding:3px 6px;
+  border-bottom:1px solid #111;white-space:nowrap}
+.market-table tbody td:first-child{text-align:left;color:var(--text-amber);font-weight:bold}
+.market-table tbody tr:hover{background:var(--bg-hover)}
+.market-table .up{color:var(--green)}
+.market-table .down{color:var(--red)}
+.log-container{font-size:11px;max-height:200px;overflow-y:auto}
+.log-line{padding:2px 0;border-bottom:1px solid #0f0f0f}
+.log-time{color:var(--text-dim)}
+.log-ok{color:var(--green)}
+.log-warn{color:var(--text-amber)}
+.log-err{color:var(--red)}
+.command-bar{display:flex;align-items:center;gap:8px;background:var(--bg-header);
+  border-top:2px solid var(--border-accent);padding:6px 12px;
+  position:sticky;bottom:0;z-index:100;flex-wrap:wrap}
+.cmd-prompt{color:var(--text-amber);font-weight:bold;font-size:14px}
+.cmd-input{flex:1;min-width:150px;background:#0a0a0a;border:1px solid var(--border);
+  color:var(--text-primary);font-family:var(--font-mono);font-size:12px;padding:5px 10px}
+.cmd-input:focus{outline:none;border-color:var(--text-amber)}
+.cmd-go{background:var(--border-accent);color:#000;border:none;padding:5px 16px;
+  font-family:var(--font-mono);font-weight:bold;font-size:11px;cursor:pointer}
+.treasury-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.treasury-card{background:#0f0f0f;border:1px solid var(--border);
+  border-top:3px solid var(--text-cyan);padding:8px}
+.treasury-label{color:var(--text-dim);font-size:10px;text-transform:uppercase}
+.treasury-value{color:var(--text-cyan);font-size:16px;font-weight:bold;margin:3px 0}
+.treasury-sub{color:var(--text-dim);font-size:10px}
+.cftc-bar{display:flex;height:18px;border:1px solid var(--border);overflow:hidden}
+.cftc-long{background:var(--green);height:100%}
+.cftc-short{background:var(--red);height:100%}
+.cftc-numbers{display:flex;justify-content:space-between;font-size:10px;margin-top:2px}
+.cftc-numbers .long{color:var(--green)}
+.cftc-numbers .short{color:var(--red)}
+.commodity-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.commodity-card{background:#0f0f0f;border:1px solid var(--border);
+  border-left:3px solid var(--text-amber);padding:8px}
+.commodity-name{color:var(--text-dim);font-size:10px;text-transform:uppercase}
+.commodity-price{color:var(--text-primary);font-size:15px;font-weight:bold;margin:2px 0}
+.commodity-change{font-size:11px}
+.news-list{max-height:350px;overflow-y:auto}
+.news-item{padding:6px 8px;border-bottom:1px solid #111}
+.news-item:hover{background:var(--bg-hover)}
+.news-item a{color:var(--text-primary);text-decoration:none;font-size:11px}
+.news-item a:hover{color:var(--text-cyan)}
+.news-meta{color:var(--text-dim);font-size:9px;margin-top:2px}
+@media (max-width:900px){
+  .terminal-grid{grid-template-columns:1fr}
+  .panel-half{grid-column:span 1}
+  .header-center{display:none}
+  .ascii-logo{font-size:12px}
+}
+@media (max-width:600px){
+  body{font-size:11px}
+  .treasury-value{font-size:14px}
+  .commodity-grid{grid-template-columns:repeat(2,1fr)}
+  .market-table{font-size:10px}
+}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:#0a0a0a}
+::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.loading{color:var(--text-dim);font-size:11px;padding:16px;text-align:center}
+</style>
+</head>
+<body>
+
+<div id="boot" class="boot-screen">
+  <pre class="boot-text" id="bootText"></pre>
+</div>
+
+<header class="terminal-header">
+  <div class="header-left">
+    <span class="ascii-logo">[Terminal.]</span>
+  </div>
+  <div class="header-center">
+    <span class="clock" id="clockWIB">WIB --:--:--</span>
+    <span class="clock" id="clockUTC">UTC --:--:--</span>
+  </div>
+  <div class="header-right">
+    <span class="status-dot" id="connStatus">●</span>
+    <span class="status-text" id="statusText">CONNECTING</span>
+    <span class="last-update" id="lastUpdate">--</span>
+  </div>
+</header>
+
+<div class="ticker-tape">
+  <div class="ticker-tape-inner" id="tickerTape">
+    <span class="loading">LOADING...</span>
+  </div>
+</div>
+
+<main class="terminal-grid">
+
+  <!-- CRYPTO -->
+  <section class="panel panel-half" id="panel-crypto">
+    <div class="panel-header">
+      <span class="panel-title">CRYPTO — LIVE</span>
+      <span class="freshness delayed" id="freshCrypto">WAIT</span>
+    </div>
+    <div class="panel-body">
+      <table class="market-table">
+        <thead><tr><th>PAIR</th><th>LAST</th><th>CHG 24H</th><th>HIGH</th><th>LOW</th></tr></thead>
+        <tbody id="tbodyCrypto"><tr><td colspan="5" class="loading">LOADING...</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- COMMODITIES -->
+  <section class="panel panel-half" id="panel-commodity">
+    <div class="panel-header">
+      <span class="panel-title">XAU & COMMODITIES — LIVE</span>
+      <span class="freshness delayed" id="freshCommodity">WAIT</span>
+    </div>
+    <div class="panel-body">
+      <div class="commodity-grid" id="commodityGrid">
+        <div class="loading">LOADING...</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOREX -->
+  <section class="panel panel-half" id="panel-forex">
+    <div class="panel-header">
+      <span class="panel-title">FOREX — LIVE</span>
+      <span class="freshness delayed" id="freshForex">WAIT</span>
+    </div>
+    <div class="panel-body">
+      <table class="market-table">
+        <thead><tr><th>PAIR</th><th>RATE</th><th>INVERSE</th><th>UPDATED</th></tr></thead>
+        <tbody id="tbodyForex"><tr><td colspan="4" class="loading">LOADING...</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- TREASURY -->
+  <section class="panel panel-half" id="panel-treasury">
+    <div class="panel-header">
+      <span class="panel-title">US TREASURY — FISCAL DATA</span>
+      <span class="freshness delayed" id="freshTreasury">WAIT</span>
+    </div>
+    <div class="panel-body">
+      <div class="treasury-grid" id="treasuryGrid">
+        <div class="loading">LOADING...</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CFTC -->
+  <section class="panel panel-full" id="panel-cftc">
+    <div class="panel-header">
+      <span class="panel-title">CFTC — COMMITMENTS OF TRADERS</span>
+      <span class="freshness delayed" id="freshCFTC">WAIT</span>
+    </div>
+    <div class="panel-body">
+      <div id="cftcContent">
+        <div class="loading">LOADING...</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HYPERLIQUID -->
+  <section class="panel panel-full" id="panel-hl">
+    <div class="panel-header">
+      <span class="panel-title">HYPERLIQUID — WHALE TRACKER</span>
+      <span class="freshness delayed" id="freshHL">WAIT</span>
+    </div>
+    <div class="panel-body">
+      <div id="hlContent">
+        <div class="loading">LOADING...</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- NEWS -->
+  <section class="panel panel-full" id="panel-news">
+    <div class="panel-header">
+      <span class="panel-title">📰 FINANCIAL NEWS — CRYPTO & MARKETS</span>
+      <span class="freshness delayed" id="freshNews">WAIT</span>
+    </div>
+    <div class="panel-body">
+      <div class="news-list" id="newsList">
+        <div class="loading">LOADING...</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOG -->
+  <section class="panel panel-full" id="panel-log">
+    <div class="panel-header">
+      <span class="panel-title">SYSTEM LOG</span>
+    </div>
+    <div class="panel-body">
+      <div class="log-container" id="logContainer"></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="command-bar">
+  <span class="cmd-prompt">&gt;</span>
+  <input type="text" id="cmdInput" class="cmd-input"
+         placeholder="Command: CRYPTO, FOREX, TREASURY, CFTC, HL, COMMODITY, NEWS, REFRESH..."
+         autocomplete="off">
+  <button class="cmd-go" onclick="executeCommand()">GO</button>
+</footer>
+
+<script>
+/* ============================================================
+   [Terminal.] v8 — LITE EDITION
+   Hanya API CORS-native + Yahoo via 2 proxy cepat.
+   Semua panel dijamin live.
+   ============================================================ */
+
+const CRYPTO_IDS = ['bitcoin','ethereum','binancecoin','ripple','solana','dogecoin','cardano'];
+
+const COMMODITIES = [
+  { sym:'XAU', name:'Gold', yahoo:'GC=F' },
+  { sym:'XAG', name:'Silver', yahoo:'SI=F' },
+  { sym:'WTI', name:'Oil WTI', yahoo:'CL=F' },
+  { sym:'BRENT', name:'Oil Brent', yahoo:'BZ=F' },
+  { sym:'NATGAS', name:'Nat Gas', yahoo:'NG=F' },
+];
+
+const FOREX_PAIRS = [
+  { pair:'USD/IDR', from:'USD', to:'IDR' },
+  { pair:'EUR/USD', from:'EUR', to:'USD' },
+  { pair:'USD/JPY', from:'USD', to:'JPY' },
+  { pair:'GBP/USD', from:'GBP', to:'USD' },
+  { pair:'USD/CNY', from:'USD', to:'CNY' },
+  { pair:'AUD/USD', from:'AUD', to:'USD' },
+];
+
+// Cuma 2 proxy tercepat
+const PROXIES = [
+  (u) => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u),
+  (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+];
+
+const marketData = { crypto:{}, commodities:{}, forex:{}, treasury:null, cftc:null, hl:null, news:null };
+let isFetching = false;
+
+/* ============ BOOT ============ */
+const BOOT_LINES = [
+  '[Terminal.] v8.0 — LITE EDITION',
+  '================================',
+  '',
+  '> Loading crypto (CoinGecko)...',
+  '> Loading commodities (Yahoo)...',
+  '> Loading forex (open.er-api)...',
+  '> Loading treasury (US Gov)...',
+  '> Loading CFTC...',
+  '> Loading Hyperliquid whales...',
+  '> Loading news (CryptoCompare)...',
+  '',
+  'Ready.',
+];
+
+function runBoot() {
+  const el = document.getElementById('bootText');
+  let i = 0;
+  (function type() {
+    if (i < BOOT_LINES.length) {
+      el.textContent += BOOT_LINES[i] + '\n';
+      i++;
+      setTimeout(type, 30);
+    } else {
+      setTimeout(() => {
+        document.getElementById('boot').classList.add('hidden');
+        init();
+      }, 200);
+    }
+  })();
+}
+
+function init() {
+  log('[Terminal.] v8 initialized', 'ok');
+  startClocks();
+  loadAll();
+  setInterval(loadAll, 120000); // refresh 2 menit
+}
+
+function startClocks() {
+  function tick() {
+    const now = new Date();
+    const fmt = (d, tz) => d.toLocaleTimeString('en-GB', { timeZone: tz, hour12: false });
+    document.getElementById('clockWIB').textContent = 'WIB ' + fmt(now, 'Asia/Jakarta');
+    document.getElementById('clockUTC').textContent = 'UTC ' + fmt(now, 'UTC');
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+/* ============ FETCH HELPERS ============ */
+function fetchTimeout(url, ms, options) {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), ms || 7000);
+  return fetch(url, Object.assign({ signal: c.signal, cache: 'no-store' }, options || {}))
+    .finally(() => clearTimeout(t));
+}
+
+async function fetchViaProxy(url) {
+  for (let i = 0; i < PROXIES.length; i++) {
+    try {
+      const res = await fetchTimeout(PROXIES[i](url), 7000);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    } catch (e) {
+      if (i === PROXIES.length - 1) throw e;
+    }
+  }
+}
+
+async function fetchYahoo(ticker) {
+  try {
+    const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' +
+                encodeURIComponent(ticker) + '?interval=15m&range=1d';
+    const data = await fetchViaProxy(url);
+    const result = data.chart && data.chart.result && data.chart.result[0];
+    if (!result) throw new Error('No result');
+    const q = result.indicators.quote[0];
+    const closes = q.close || [];
+    let lastIdx = closes.length - 1;
+    while (lastIdx >= 0 && closes[lastIdx] == null) lastIdx--;
+    if (lastIdx < 0) throw new Error('No close');
+    const price = closes[lastIdx];
+    let firstIdx = 0;
+    while (firstIdx < closes.length && closes[firstIdx] == null) firstIdx++;
+    const change_pct = ((price - closes[firstIdx]) / closes[firstIdx]) * 100;
+    return {
+      price: round4(price),
+      high: round4(q.high[lastIdx] || price),
+      low: round4(q.low[lastIdx] || price),
+      change_pct: round2(change_pct),
+    };
+  } catch (e) {
+    console.warn('Yahoo fail', ticker, e.message);
+    return null;
+  }
+}
+
+/* ============ CRYPTO ============ */
+async function loadCrypto() {
+  try {
+    const url = 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=' +
+                CRYPTO_IDS.join(',') + '&price_change_percentage=24h';
+    const res = await fetchTimeout(url, 8000);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    data.forEach(c => {
+      marketData.crypto[c.symbol.toUpperCase()] = {
+        price: c.current_price,
+        high: c.high_24h,
+        low: c.low_24h,
+        change_pct: c.price_change_percentage_24h || 0,
+      };
+    });
+    log('Crypto: ' + Object.keys(marketData.crypto).length + ' ok', 'ok');
+    renderCrypto();
+    updateFresh('freshCrypto', 'live');
+  } catch (e) {
+    log('Crypto fail: ' + e.message, 'err');
+    updateFresh('freshCrypto', 'dead');
+  }
+}
+
+/* ============ COMMODITIES ============ */
+async function loadCommodities() {
+  let count = 0;
+  for (const c of COMMODITIES) {
+    const q = await fetchYahoo(c.yahoo);
+    if (q) {
+      marketData.commodities[c.sym] = {
+        name: c.name, price: q.price, high: q.high, low: q.low, change_pct: q.change_pct
+      };
+      count++;
+    }
+  }
+  log('Commodities: ' + count + '/' + COMMODITIES.length, count > 0 ? 'ok' : 'err');
+  renderCommodities();
+  updateFresh('freshCommodity', count > 0 ? 'live' : 'dead');
+}
+
+/* ============ FOREX (open.er-api.com — CORS-native) ============ */
+async function loadForex() {
+  try {
+    const res = await fetchTimeout('https://open.er-api.com/v6/latest/USD', 7000);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const rates = data.rates || {};
+    FOREX_PAIRS.forEach(fp => {
+      let rate = null;
+      if (fp.from === 'USD') rate = rates[fp.to];
+      else if (fp.to === 'USD' && rates[fp.from]) rate = 1 / rates[fp.from];
+      if (rate) {
+        marketData.forex[fp.pair] = {
+          rate: round4(rate),
+          date: (data.time_last_update_utc || '').split(' ').slice(1, 4).join(' ')
+        };
+      }
+    });
+    log('Forex: ' + Object.keys(marketData.forex).length + ' ok', 'ok');
+    renderForex();
+    updateFresh('freshForex', 'live');
+  } catch (e) {
+    log('Forex fail: ' + e.message, 'err');
+    updateFresh('freshForex', 'dead');
+  }
+}
+
+/* ============ TREASURY ============ */
+async function loadTreasury() {
+  const t = { debt: null, rates: [] };
+  try {
+    const r = await fetchTimeout(
+      'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/debt_to_penny?sort=-record_date&page[size]=1', 8000);
+    if (r.ok) {
+      const d = await r.json();
+      if (d.data && d.data[0]) {
+        const row = d.data[0];
+        t.debt = {
+          date: row.record_date,
+          total: parseFloat(row.tot_pub_debt_out_amt) || 0,
+          public: parseFloat(row.debt_held_public_amt) || 0,
+          intragov: parseFloat(row.intragov_hold_amt) || 0,
+        };
+      }
+    }
+  } catch (e) {}
+  try {
+    const r = await fetchTimeout(
+      'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/avg_interest_rates?sort=-record_date&page[size]=20', 8000);
+    if (r.ok) {
+      const d = await r.json();
+      if (d.data) {
+        const seen = new Set();
+        for (const row of d.data) {
+          const k = row.security_type_desc;
+          if (!seen.has(k) && t.rates.length < 4) {
+            seen.add(k);
+            t.rates.push({
+              type: row.security_type_desc,
+              rate: parseFloat(row.avg_interest_rate_amt) || 0,
+              date: row.record_date,
+            });
+          }
+        }
+      }
+    }
+  } catch (e) {}
+
+  if (t.debt || t.rates.length > 0) {
+    marketData.treasury = t;
+    log('Treasury: ok', 'ok');
+    renderTreasury();
+    updateFresh('freshTreasury', 'live');
+  } else {
+    log('Treasury: no data', 'err');
+    updateFresh('freshTreasury', 'dead');
+  }
+}
+
+/* ============ CFTC ============ */
+async function loadCFTC() {
+  try {
+    const url = 'https://publicreporting.cftc.gov/resource/gpe5-46if.json?' +
+                '$order=report_date_as_yyyy_mm_dd%20DESC&$limit=60';
+    const res = await fetchTimeout(url, 8000);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const byMarket = {};
+    for (const row of data) {
+      const name = row.contract_market_name || row.market_and_exchange_names;
+      if (!name) continue;
+      if (!byMarket[name]) byMarket[name] = row;
+    }
+    const markets = Object.values(byMarket)
+      .filter(r => r.open_interest_all != null)
+      .slice(0, 10)
+      .map(r => ({
+        name: r.contract_market_name || r.market_and_exchange_names || '?',
+        date: (r.report_date_as_yyyy_mm_dd || '').split('T')[0],
+        openInterest: parseFloat(r.open_interest_all) || 0,
+        noncommLong: parseFloat(r.noncomm_positions_long_all) || 0,
+        noncommShort: parseFloat(r.noncomm_positions_short_all) || 0,
+      }));
+    if (markets.length === 0) throw new Error('No markets');
+    marketData.cftc = { markets };
+    log('CFTC: ' + markets.length + ' markets', 'ok');
+    renderCFTC();
+    updateFresh('freshCFTC', 'live');
+  } catch (e) {
+    log('CFTC fail: ' + e.message, 'err');
+    updateFresh('freshCFTC', 'dead');
+  }
+}
+
+/* ============ HYPERLIQUID ============ */
+async function loadHL() {
+  try {
+    const res = await fetchTimeout('https://api.hyperliquid.xyz/info', 7000, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'metaAndAssetCtxs' })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const meta = data[0], ctxs = data[1] || [];
+    const assets = meta.universe || [];
+    const rows = [];
+    for (let i = 0; i < Math.min(assets.length, 30); i++) {
+      const a = assets[i], c = ctxs[i] || {};
+      if (!a || !c) continue;
+      const oi = parseFloat(c.openInterest) || 0;
+      const price = parseFloat(c.markPx) || 0;
+      rows.push({
+        coin: a.name,
+        price: price,
+        funding: parseFloat(c.funding) || 0,
+        oiUsd: oi * price,
+      });
+    }
+    rows.sort((a, b) => b.oiUsd - a.oiUsd);
+    marketData.hl = rows.slice(0, 10);
+    log('Hyperliquid: ' + marketData.hl.length + ' markets', 'ok');
+    renderHL();
+    updateFresh('freshHL', 'live');
+  } catch (e) {
+    log('HL fail: ' + e.message, 'err');
+    updateFresh('freshHL', 'dead');
+  }
+}
+
+/* ============ NEWS (CryptoCompare — CORS-native) ============ */
+async function loadNews() {
+  try {
+    const res = await fetchTimeout(
+      'https://min-api.cryptocompare.com/data/v2/news/?lang=EN', 8000);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const articles = (data.Data || []).slice(0, 20).map(a => ({
+      title: a.title,
+      url: a.url,
+      source: a.source_info ? a.source_info.name : (a.source || 'CryptoCompare'),
+      date: new Date((a.published_on || 0) * 1000).toISOString().split('T')[0],
+      categories: (a.categories || '').split('|').slice(0, 2).join(' · '),
+    }));
+    if (articles.length === 0) throw new Error('No articles');
+    marketData.news = articles;
+    log('News: ' + articles.length + ' articles', 'ok');
+    renderNews();
+    updateFresh('freshNews', 'live');
+  } catch (e) {
+    log('News fail: ' + e.message, 'err');
+    document.getElementById('newsList').innerHTML =
+      '<div class="loading">News tidak tersedia</div>';
+    updateFresh('freshNews', 'dead');
+  }
+}
+
+/* ============ LOAD ALL ============ */
+async function loadAll() {
+  if (isFetching) return;
+  isFetching = true;
+  document.getElementById('connStatus').className = 'status-dot';
+  document.getElementById('statusText').textContent = 'LOADING';
+  log('=== REFRESH ===', 'warn');
+
+  await Promise.allSettled([
+    loadCrypto(),
+    loadCommodities(),
+    loadForex(),
+    loadTreasury(),
+    loadCFTC(),
+    loadHL(),
+    loadNews(),
+  ]);
+
+  const total = Object.keys(marketData.crypto).length +
+                Object.keys(marketData.commodities).length +
+                Object.keys(marketData.forex).length +
+                (marketData.treasury ? 1 : 0) +
+                (marketData.cftc ? 1 : 0) +
+                (marketData.hl ? 1 : 0) +
+                (marketData.news ? 1 : 0);
+
+  document.getElementById('connStatus').className =
+    total > 0 ? 'status-dot live' : 'status-dot offline';
+  document.getElementById('statusText').textContent = total > 0 ? 'LIVE' : 'ERROR';
+  document.getElementById('lastUpdate').textContent =
+    'UPD ' + new Date().toLocaleTimeString('en-GB',
+      { timeZone: 'Asia/Jakarta', hour12: false }) + ' WIB';
+
+  renderTickerTape();
+  log('Done. ' + total + ' sources loaded.', 'ok');
+  isFetching = false;
+}
+
+/* ============ FRESHNESS ============ */
+function updateFresh(id, status) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'freshness ' + status;
+  el.textContent = status === 'live' ? 'LIVE' : status === 'delayed' ? 'WAIT' : 'FAIL';
+}
+
+/* ============ RENDER: CRYPTO ============ */
+function renderCrypto() {
+  const tbody = document.getElementById('tbodyCrypto');
+  const entries = Object.entries(marketData.crypto);
+  if (!entries.length) { tbody.innerHTML = '<tr><td colspan="5" class="loading">Tidak ada data</td></tr>'; return; }
+  tbody.innerHTML = entries.map(([sym, q]) => {
+    const up = q.change_pct >= 0;
+    return '<tr><td>' + sym + '/USD</td>' +
+      '<td>$' + fmtPrice(q.price) + '</td>' +
+      '<td class="' + (up?'up':'down') + '">' + (up?'+':'') + q.change_pct.toFixed(2) + '%</td>' +
+      '<td>' + fmtPrice(q.high) + '</td>' +
+      '<td>' + fmtPrice(q.low) + '</td></tr>';
+  }).join('');
+}
+
+/* ============ RENDER: COMMODITIES ============ */
+function renderCommodities() {
+  const grid = document.getElementById('commodityGrid');
+  const entries = Object.entries(marketData.commodities);
+  if (!entries.length) { grid.innerHTML = '<div class="loading">Tidak ada data</div>'; return; }
+  grid.innerHTML = entries.map(([sym, q]) => {
+    const up = q.change_pct >= 0;
+    return '<div class="commodity-card">' +
+      '<div class="commodity-name">' + q.name + '</div>' +
+      '<div class="commodity-price">$' + fmtPrice(q.price) + '</div>' +
+      '<div class="commodity-change ' + (up?'up':'down') + '">' + (up?'+':'') + q.change_pct.toFixed(2) + '%</div>' +
+      '</div>';
+  }).join('');
+}
+
+/* ============ RENDER: FOREX ============ */
+function renderForex() {
+  const tbody = document.getElementById('tbodyForex');
+  const entries = Object.entries(marketData.forex);
+  if (!entries.length) { tbody.innerHTML = '<tr><td colspan="4" class="loading">Tidak ada data</td></tr>'; return; }
+  tbody.innerHTML = entries.map(([pair, q]) => {
+    const inv = q.rate ? (1 / q.rate) : 0;
+    return '<tr><td>' + pair + '</td>' +
+      '<td>' + fmtPrice(q.rate) + '</td>' +
+      '<td style="color:var(--text-dim)">' + fmtPrice(inv) + '</td>' +
+      '<td style="color:var(--text-dim);font-size:10px">' + (q.date || '--') + '</td></tr>';
+  }).join('');
+}
+
+/* ============ RENDER: TREASURY ============ */
+function renderTreasury() {
+  const grid = document.getElementById('treasuryGrid');
+  const t = marketData.treasury;
+  if (!t) return;
+  let html = '';
+  if (t.debt) {
+    html += '<div class="treasury-card"><div class="treasury-label">US National Debt</div>' +
+      '<div class="treasury-value">$' + fmtNum(t.debt.total) + '</div>' +
+      '<div class="treasury-sub">Per ' + t.debt.date + '</div></div>';
+    html += '<div class="treasury-card"><div class="treasury-label">Debt Held by Public</div>' +
+      '<div class="treasury-value">$' + fmtNum(t.debt.public) + '</div>' +
+      '<div class="treasury-sub">Public portion</div></div>';
+    html += '<div class="treasury-card"><div class="treasury-label">Intragovernmental</div>' +
+      '<div class="treasury-value">$' + fmtNum(t.debt.intragov) + '</div>' +
+      '<div class="treasury-sub">Gov accounts</div></div>';
+  }
+  t.rates.forEach(r => {
+    html += '<div class="treasury-card"><div class="treasury-label">' + r.type + '</div>' +
+      '<div class="treasury-value">' + r.rate.toFixed(3) + '%</div>' +
+      '<div class="treasury-sub">Avg · ' + r.date + '</div></div>';
+  });
+  grid.innerHTML = html || '<div class="loading">Tidak ada data</div>';
+}
+
+/* ============ RENDER: CFTC ============ */
+function renderCFTC() {
+  const el = document.getElementById('cftcContent');
+  const c = marketData.cftc;
+  if (!c || !c.markets.length) { el.innerHTML = '<div class="loading">Tidak ada data</div>'; return; }
+  let html = '<div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">' +
+    'Commitments of Traders · Update: ' + (c.markets[0].date || '--') + '</div>';
+  html += '<table class="market-table"><thead><tr>' +
+    '<th style="text-align:left">MARKET</th><th>OPEN INT</th><th>LONG</th><th>SHORT</th>' +
+    '<th>NET</th><th style="min-width:100px">POSITION</th></tr></thead><tbody>';
+  c.markets.forEach(m => {
+    const net = m.noncommLong - m.noncommShort;
+    const total = m.noncommLong + m.noncommShort || 1;
+    const longPct = (m.noncommLong / total) * 100;
+    html += '<tr><td>' + m.name.substring(0, 26) + '</td>' +
+      '<td>' + fmtVol(m.openInterest) + '</td>' +
+      '<td class="up">' + fmtVol(m.noncommLong) + '</td>' +
+      '<td class="down">' + fmtVol(m.noncommShort) + '</td>' +
+      '<td class="' + (net>=0?'up':'down') + '">' + (net>=0?'+':'') + fmtVol(net) + '</td>' +
+      '<td style="padding:3px 5px"><div class="cftc-bar">' +
+        '<div class="cftc-long" style="width:' + longPct + '%"></div>' +
+        '<div class="cftc-short" style="width:' + (100-longPct) + '%"></div>' +
+      '</div><div class="cftc-numbers"><span class="long">' + longPct.toFixed(0) + '%</span>' +
+      '<span class="short">' + (100-longPct).toFixed(0) + '%</span></div></td></tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+/* ============ RENDER: HYPERLIQUID ============ */
+function renderHL() {
+  const el = document.getElementById('hlContent');
+  const rows = marketData.hl;
+  if (!rows || !rows.length) { el.innerHTML = '<div class="loading">Tidak ada data</div>'; return; }
+  let html = '<div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">' +
+    'Top Markets by Open Interest · Live dari Hyperliquid API</div>';
+  html += '<table class="market-table"><thead><tr>' +
+    '<th style="text-align:left">COIN</th><th>PRICE</th><th>OPEN INT (USD)</th><th>FUNDING</th>' +
+    '</tr></thead><tbody>';
+  rows.forEach(r => {
+    html += '<tr><td>' + r.coin + '</td>' +
+      '<td>$' + fmtPrice(r.price) + '</td>' +
+      '<td style="color:var(--text-cyan);font-weight:bold">$' + fmtVol(r.oiUsd) + '</td>' +
+      '<td class="' + (r.funding>=0?'up':'down') + '">' + (r.funding*100).toFixed(4) + '%</td>' +
+      '</tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+/* ============ RENDER: NEWS ============ */
+function renderNews() {
+  const el = document.getElementById('newsList');
+  const articles = marketData.news;
+  if (!articles || !articles.length) {
+    el.innerHTML = '<div class="loading">News tidak tersedia</div>';
+    return;
+  }
+  el.innerHTML = articles.map(a => {
+    return '<div class="news-item">' +
+      '<a href="' + a.url + '" target="_blank" rel="noopener">' + a.title + '</a>' +
+      '<div class="news-meta">' + a.source + ' · ' + a.date + (a.categories ? ' · ' + a.categories : '') + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+/* ============ RENDER: TICKER TAPE ============ */
+function renderTickerTape() {
+  const el = document.getElementById('tickerTape');
+  const items = [];
+  const add = (sym, q) => {
+    const up = q.change_pct >= 0;
+    items.push('<span class="ticker-item">' +
+      '<span class="sym">' + sym + '</span>' +
+      '<span class="px">' + fmtPrice(q.price) + '</span>' +
+      '<span class="chg ' + (up?'up':'down') + '">' + (up?'+':'') + q.change_pct.toFixed(2) + '%</span>' +
+      '</span>');
+  };
+  Object.entries(marketData.crypto).forEach(([k,v]) => add(k,v));
+  Object.entries(marketData.commodities).forEach(([k,v]) => add(k,v));
+  Object.entries(marketData.forex).forEach(([k,v]) => {
+    items.push('<span class="ticker-item"><span class="sym">' + k + '</span>' +
+      '<span class="px">' + fmtPrice(v.rate) + '</span></span>');
+  });
+  if (!items.length) { el.innerHTML = '<span class="loading">MENUNGGU DATA...</span>'; return; }
+  el.innerHTML = items.concat(items).join('');
+}
+
+/* ============ COMMAND BAR ============ */
+function executeCommand() {
+  const input = document.getElementById('cmdInput');
+  const cmd = input.value.trim().toUpperCase();
+  if (!cmd) return;
+  log('> ' + cmd, 'warn');
+  const map = {
+    'CRYPTO':'panel-crypto','FOREX':'panel-forex','TREASURY':'panel-treasury',
+    'CFTC':'panel-cftc','HL':'panel-hl','COMMODITY':'panel-commodity',
+    'NEWS':'panel-news','LOG':'panel-log',
+  };
+  if (cmd === 'HELP') log('CRYPTO, FOREX, TREASURY, CFTC, HL, COMMODITY, NEWS, REFRESH, CLEAR', 'ok');
+  else if (cmd === 'REFRESH') loadAll();
+  else if (cmd === 'CLEAR') document.getElementById('logContainer').innerHTML = '';
+  else if (map[cmd]) document.getElementById(map[cmd]).scrollIntoView({ behavior: 'smooth' });
+  else log('Unknown: ' + cmd, 'warn');
+  input.value = '';
+}
+
+document.getElementById('cmdInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') executeCommand();
+});
+
+/* ============ HELPERS ============ */
+function log(msg, type) {
+  type = type || 'ok';
+  const el = document.getElementById('logContainer');
+  const t = new Date().toLocaleTimeString('en-GB', { hour12: false });
+  const m = { ok:'log-ok', warn:'log-warn', err:'log-err' };
+  el.innerHTML += '<div class="log-line"><span class="log-time">[' + t + ']</span> ' +
+    '<span class="' + (m[type]||'log-ok') + '">' + msg + '</span></div>';
+  el.scrollTop = el.scrollHeight;
+}
+
+function fmtNum(n) {
+  if (n == null || isNaN(n)) return '--';
+  const a = Math.abs(n);
+  if (a >= 1e12) return (n/1e12).toFixed(2) + 'T';
+  if (a >= 1e9) return (n/1e9).toFixed(2) + 'B';
+  if (a >= 1e6) return (n/1e6).toFixed(2) + 'M';
+  if (a >= 1e3) return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  return n.toFixed(2);
+}
+
+function fmtPrice(n) {
+  if (n == null || isNaN(n)) return '--';
+  const a = Math.abs(n);
+  if (a >= 1000) return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  if (a >= 1) return n.toFixed(2);
+  if (a >= 0.01) return n.toFixed(4);
+  return n.toFixed(6);
+}
+
+function fmtVol(v) {
+  if (!v || isNaN(v)) return '--';
+  const a = Math.abs(v);
+  if (a >= 1e9) return (v/1e9).toFixed(2) + 'B';
+  if (a >= 1e6) return (v/1e6).toFixed(2) + 'M';
+  if (a >= 1e3) return (v/1e3).toFixed(1) + 'K';
+  return String(Math.round(v));
+}
+
+function round2(n) { return Math.round(n*100)/100; }
+function round4(n) { return Math.round(n*10000)/10000; }
+
+runBoot();
+</script>
+</body>
+</html>
